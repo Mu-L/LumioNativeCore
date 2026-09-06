@@ -70,8 +70,7 @@ fn undersized_output_reports_required_without_overwrite() {
         ErrorDetail::RequiredCapacity { required, provided } => {
             assert!(
                 *required >= 2,
-                "one overlapping AABB query needs N>1 hits, required={}",
-                required
+                "one overlapping AABB query needs N>1 hits, required={required}"
             );
             assert_eq!(*provided, 1);
         }

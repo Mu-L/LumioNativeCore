@@ -117,7 +117,10 @@ fn reconnect_deadline_runs_on_kernel_wall_clock() {
     let records = wall.drain_records().expect("drain reconnect");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].due_tick, RECONNECT_RETENTION_MS);
-    assert_eq!(wall.cancel(handle), Err(lumio_timer::TimerError::StaleHandle));
+    assert_eq!(
+        wall.cancel(handle),
+        Err(lumio_timer::TimerError::StaleHandle)
+    );
     assert!(
         ticks_client
             .trace()
