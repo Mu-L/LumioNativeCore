@@ -1,92 +1,77 @@
-//! T-job-06 / R-00148: worker execute must not hold the scheduler lock.
-
-use std::sync::Arc;
-
+//! Real executable kernel re-enters scheduler queries, without a boolean oracle.
 use lumio_job::{
-    JobRequest, JobState, JobSystem, JobSystemConfig, OperationId, OperationRegistry, TypedKernel,
+    JobExecution, JobRequest, JobState, JobSystem, JobSystemConfig, OperationId, OperationRegistry,
+    TypedKernel,
 };
 use lumio_kernel::capability::ConfiguredLimits;
 use lumio_kernel::context::{ContextConfig, KernelContext};
-use lumio_kernel::error::ErrorCategory;
-use lumio_platform::{Deadline, Ticks};
-use lumio_test_support::FakeClock;
-
-struct DummyKernel {
-    id: OperationId,
+use lumio_kernel::error::{ErrorCategory, ErrorDetail, KernelError, KernelResult};
+use lumio_platform::{Deadline, StdMonotonicClock};
+use std::sync::{Arc, Mutex, Weak, mpsc};
+use std::time::Duration;
+struct Reentrant {
+    system: Mutex<Weak<JobSystem>>,
 }
-
-impl TypedKernel for DummyKernel {
+impl TypedKernel for Reentrant {
     fn operation_id(&self) -> OperationId {
-        self.id
+        OperationId::from_raw(7)
+    }
+    fn execute(&self, _: &[u8], _: &mut [u8], _: &JobExecution) -> KernelResult<usize> {
+        let system = self.system.lock().unwrap().upgrade().unwrap();
+        let (tx, rx) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let _ = tx.send(system.retained_jobs());
+        });
+        let count = rx
+            .recv_timeout(Duration::from_secs(2))
+            .map_err(|_| KernelError::new(ErrorCategory::InternalInvariant, ErrorDetail::None))?;
+        assert_eq!(count, 1);
+        Ok(0)
     }
 }
-
-fn test_config() -> ContextConfig {
-    ContextConfig {
-        limits: ConfiguredLimits {
-            max_handles: 4,
-            max_native_bytes: 64,
-            max_jobs_queued: 4,
-            max_jobs_running: 1,
-            max_completion_items: 1,
-        },
-        quiesce_deadline: Deadline::NONE,
-    }
-}
-
 #[test]
 fn worker_never_executes_under_scheduler_lock() {
-    let context = KernelContext::create_for_test(test_config());
+    let context = KernelContext::create(ContextConfig {
+        limits: ConfiguredLimits {
+            max_handles: 8,
+            max_native_bytes: 64,
+            max_jobs_queued: 2,
+            max_jobs_running: 1,
+            max_completion_items: 3,
+        },
+        quiesce_deadline: Deadline::NONE,
+    })
+    .unwrap();
+    let kernel = Arc::new(Reentrant {
+        system: Mutex::new(Weak::new()),
+    });
     let mut registry = OperationRegistry::new();
-    let op = OperationId::test_only(1);
-    registry
-        .register(Arc::new(DummyKernel { id: op }))
-        .expect("register dummy kernel");
+    registry.register(kernel.clone()).unwrap();
     let system = JobSystem::create(
-        context,
+        context.clone(),
         JobSystemConfig {
             queue_capacity: 2,
             worker_count: 0,
         },
         Arc::new(registry),
-        Arc::new(FakeClock::new(Ticks::ZERO)),
+        Arc::new(StdMonotonicClock::new()),
     )
-    .expect("create job system");
-
-    let handle = system
-        .submit(JobRequest {
-            operation: op,
-            deadline: Deadline::NONE,
-        })
-        .expect("submit");
-
-    assert!(system.pump_one(), "queued job must be pumped");
-    assert!(
-        !system.scheduler_lock_held(),
-        "execute region must not observe the scheduler lock as held"
+    .unwrap();
+    *kernel.system.lock().unwrap() = Arc::downgrade(&system);
+    let request = JobRequest {
+        operation: OperationId::from_raw(7),
+        deadline: Deadline::NONE,
+    };
+    let handle = system.submit(request).unwrap();
+    assert!(system.pump_one());
+    assert_eq!(
+        system.take_result(handle).unwrap().state,
+        JobState::Succeeded
     );
-
-    let snap = system.poll(handle).expect("poll");
-    assert_eq!(snap.id, handle.id());
-    assert_eq!(snap.state, JobState::Succeeded);
-
-    let _second = system
-        .submit(JobRequest {
-            operation: op,
-            deadline: Deadline::NONE,
-        })
-        .expect("queue still has a free slot");
-    let _third = system
-        .submit(JobRequest {
-            operation: op,
-            deadline: Deadline::NONE,
-        })
-        .expect("fill remaining capacity");
-    let err = system
-        .submit(JobRequest {
-            operation: op,
-            deadline: Deadline::NONE,
-        })
-        .expect_err("full queue must return CapacityExceeded immediately");
-    assert_eq!(err.category(), ErrorCategory::CapacityExceeded);
+    system.submit(request).unwrap();
+    system.submit(request).unwrap();
+    assert_eq!(
+        system.submit(request).unwrap_err().category(),
+        ErrorCategory::CapacityExceeded
+    );
 }

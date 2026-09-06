@@ -44,6 +44,5 @@
 
 ## 相关
 
-- [ABI 模块](../abi/README.md)
 - [仓库边界与架构契约](../../.spec/knowledge/standards/repository-architecture.md)
 - [根 README](../../README.md)

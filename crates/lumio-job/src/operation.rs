@@ -1,47 +1,46 @@
-//! Typed kernel lookup by crate-local `OperationId`.
-//!
-//! Architecture-generated operation numbers are unpublished (B-ABI-004).
-
+//! Rust-only executable operation registry. No managed callbacks or ABI IDs.
+use crate::id::OperationId;
+use crate::worker::JobExecution;
+use lumio_kernel::error::{ErrorCategory, ErrorDetail, KernelError, KernelResult};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use lumio_kernel::error::{ErrorCategory, ErrorDetail, KernelError};
-
-use crate::id::OperationId;
-
 pub trait TypedKernel: Send + Sync + 'static {
     fn operation_id(&self) -> OperationId;
+    /// Write at most output.len() bytes and return the initialized length.
+    /// Long kernels must check control.check_cancelled() at bounded intervals.
+    /// A metadata-only registration is explicitly unavailable, never successful.
+    fn execute(
+        &self,
+        _input: &[u8],
+        _output: &mut [u8],
+        _control: &JobExecution,
+    ) -> KernelResult<usize> {
+        Err(KernelError::new(
+            ErrorCategory::CapabilityUnavailable,
+            ErrorDetail::StaticMessage("operation has no executable kernel"),
+        ))
+    }
 }
-
+#[derive(Default)]
 pub struct OperationRegistry {
     kernels: HashMap<OperationId, Arc<dyn TypedKernel>>,
 }
-
-impl Default for OperationRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl OperationRegistry {
     pub fn new() -> Self {
-        Self {
-            kernels: HashMap::new(),
-        }
+        Self::default()
     }
-
-    pub fn register(&mut self, k: Arc<dyn TypedKernel>) -> Result<(), KernelError> {
-        let id = k.operation_id();
+    pub fn register(&mut self, kernel: Arc<dyn TypedKernel>) -> KernelResult<()> {
+        let id = kernel.operation_id();
         if self.kernels.contains_key(&id) {
             return Err(KernelError::new(
                 ErrorCategory::InvalidArgument,
                 ErrorDetail::None,
             ));
         }
-        self.kernels.insert(id, k);
+        self.kernels.insert(id, kernel);
         Ok(())
     }
-
     pub fn get(&self, id: OperationId) -> Option<Arc<dyn TypedKernel>> {
         self.kernels.get(&id).cloned()
     }

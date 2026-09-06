@@ -1,16 +1,12 @@
-//! `lumio-spatial`：Grid / Hash / BVH / 邻域 / 批量距离与碰撞基础 Kernel。
-//!
-//! 不编译期依赖 lumio-job（作为 operation 经 registry 运行时绑定）；
-//! 索引作为 ContextResource 注册进 kernel-context。
-
+//! Bounded AABB spatial kernels. Optimized backend and oracle share only the port.
 #![forbid(unsafe_code)]
-
 mod index;
 mod query;
 mod resource;
 mod types;
-
-pub use index::{GridReferenceIndex, RStarIndexAdapter, SpatialIndexBackend};
-pub use query::{AabbQuery, SpatialContext, SpatialHit};
+#[cfg(feature = "rstar-backend")]
+pub use index::RStarIndexAdapter;
+pub use index::{GridReferenceIndex, SpatialIndexBackend};
+pub use query::{AabbQuery, SpatialContext, SpatialHit, SpatialQueryLimits};
 pub use resource::SpatialResource;
 pub use types::{Aabb3, Point3, SpatialObjectId};

@@ -1,81 +1,85 @@
-//! One-shot completion batch: publish, drain, and release each JobId at most once.
-
-use std::collections::HashMap;
-use std::sync::Mutex;
-
-use lumio_kernel::error::{ErrorCategory, ErrorDetail, KernelError, KernelResult};
-
+//! Bounded standalone completion buffer. IDs must be published monotonically.
+//! Active leases plus a bounded recent-release window use O(capacity) space.
+//! Older releases return InvalidHandle; the high-water mark prevents republish.
 use crate::id::JobId;
-use crate::queue::BoundedJobQueue;
 use crate::state::JobState;
+use lumio_kernel::error::{ErrorCategory, ErrorDetail, KernelError, KernelResult};
+use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JobCompletion {
     pub id: JobId,
     pub state: JobState,
 }
-
-enum Lease {
-    Published,
-    Released,
+#[derive(Default)]
+struct BatchState {
+    queue: VecDeque<JobCompletion>,
+    leases: HashMap<JobId, bool>,
+    released: VecDeque<JobId>,
+    high_water: Option<u64>,
 }
-
 pub struct CompletionBatch {
-    queue: BoundedJobQueue<JobCompletion>,
-    leases: Mutex<HashMap<JobId, Lease>>,
+    capacity: usize,
+    state: Mutex<BatchState>,
 }
-
+fn err(category: ErrorCategory) -> KernelError {
+    KernelError::new(category, ErrorDetail::None)
+}
 impl CompletionBatch {
-    pub fn with_capacity(cap: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            queue: BoundedJobQueue::with_capacity(cap),
-            leases: Mutex::new(HashMap::new()),
+            capacity,
+            state: Mutex::new(BatchState::default()),
         }
     }
-
-    pub fn publish(&self, c: JobCompletion) -> KernelResult<()> {
-        let mut leases = self.leases.lock().unwrap_or_else(|p| p.into_inner());
-        if leases.contains_key(&c.id) {
-            return Err(KernelError::new(
-                ErrorCategory::InvalidArgument,
-                ErrorDetail::None,
-            ));
+    pub fn publish(&self, completion: JobCompletion) -> KernelResult<()> {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if !completion.state.is_terminal()
+            || state
+                .high_water
+                .is_some_and(|high| completion.id.raw() <= high)
+        {
+            return Err(err(ErrorCategory::InvalidArgument));
         }
-        let id = c.id;
-        self.queue.try_push(c)?;
-        leases.insert(id, Lease::Published);
+        if state.leases.len() >= self.capacity {
+            return Err(err(ErrorCategory::CapacityExceeded));
+        }
+        state.queue.push_back(completion);
+        state.leases.insert(completion.id, false);
+        state.high_water = Some(completion.id.raw());
         Ok(())
     }
-
     pub fn drain(&self, out: &mut [JobCompletion]) -> KernelResult<usize> {
-        let mut n = 0;
-        for slot in out.iter_mut() {
-            match self.queue.try_pop() {
-                Some(c) => {
-                    *slot = c;
-                    n += 1;
-                }
-                None => break,
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        let count = out.len().min(state.queue.len());
+        for slot in &mut out[..count] {
+            *slot = state.queue.pop_front().expect("count checked");
+            if let Some(drained) = state.leases.get_mut(&slot.id) {
+                *drained = true;
             }
         }
-        Ok(n)
+        Ok(count)
     }
-
     pub fn release(&self, id: JobId) -> KernelResult<()> {
-        let mut leases = self.leases.lock().unwrap_or_else(|p| p.into_inner());
-        match leases.get_mut(&id) {
-            Some(lease @ Lease::Published) => {
-                *lease = Lease::Released;
-                Ok(())
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        match state.leases.get(&id) {
+            Some(true) => {}
+            Some(false) => return Err(err(ErrorCategory::InvalidArgument)),
+            None if state.released.contains(&id) => {
+                return Err(err(ErrorCategory::AlreadyReleased));
             }
-            Some(Lease::Released) => Err(KernelError::new(
-                ErrorCategory::AlreadyReleased,
-                ErrorDetail::None,
-            )),
-            None => Err(KernelError::new(
-                ErrorCategory::InvalidHandle,
-                ErrorDetail::None,
-            )),
+            None => return Err(err(ErrorCategory::InvalidHandle)),
         }
+        state.leases.remove(&id);
+        if state.released.len() == self.capacity {
+            state.released.pop_front();
+        }
+        state.released.push_back(id);
+        Ok(())
+    }
+    pub fn retained_count(&self) -> usize {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.leases.len() + state.released.len()
     }
 }

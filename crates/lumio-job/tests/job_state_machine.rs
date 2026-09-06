@@ -26,6 +26,16 @@ impl TypedKernel for DummyKernel {
     fn operation_id(&self) -> OperationId {
         self.id
     }
+    fn execute(
+        &self,
+        input: &[u8],
+        output: &mut [u8],
+        control: &lumio_job::JobExecution,
+    ) -> lumio_kernel::error::KernelResult<usize> {
+        control.check_cancelled()?;
+        assert!(input.is_empty() && output.is_empty());
+        Ok(0)
+    }
 }
 
 fn test_config() -> ContextConfig {
@@ -51,7 +61,7 @@ fn deadline() -> Deadline {
     Deadline::at(Ticks::from_nanos(DEADLINE_NANOS))
 }
 
-fn job_system(clock: Arc<FakeClock>) -> (Arc<JobSystem>, OperationId) {
+fn job_system(clock: Arc<FakeClock>) -> (Arc<KernelContext>, Arc<JobSystem>, OperationId) {
     let context = KernelContext::create_for_test(test_config());
     let mut registry = OperationRegistry::new();
     let op = OperationId::test_only(1);
@@ -59,7 +69,7 @@ fn job_system(clock: Arc<FakeClock>) -> (Arc<JobSystem>, OperationId) {
         .register(Arc::new(DummyKernel { id: op }))
         .expect("register dummy kernel");
     let system = JobSystem::create(
-        context,
+        Arc::clone(&context),
         JobSystemConfig {
             queue_capacity: 2,
             worker_count: 0,
@@ -68,7 +78,7 @@ fn job_system(clock: Arc<FakeClock>) -> (Arc<JobSystem>, OperationId) {
         clock,
     )
     .expect("create job system");
-    (system, op)
+    (context, system, op)
 }
 
 #[test]
@@ -134,7 +144,7 @@ fn concurrent_complete_rejects_timed_out_cas() {
 
 fn expired_before_start_is_cancelled() {
     let clock = late_clock();
-    let (system, op) = job_system(Arc::clone(&clock));
+    let (_context, system, op) = job_system(Arc::clone(&clock));
     let handle = system
         .submit(JobRequest {
             operation: op,
@@ -152,7 +162,7 @@ fn expired_before_start_is_cancelled() {
 
 fn unexpired_deadline_completes_succeeded() {
     let clock = Arc::new(FakeClock::new(Ticks::ZERO));
-    let (system, op) = job_system(Arc::clone(&clock));
+    let (_context, system, op) = job_system(Arc::clone(&clock));
     let handle = system
         .submit(JobRequest {
             operation: op,

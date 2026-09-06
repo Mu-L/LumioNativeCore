@@ -1,10 +1,5 @@
-//! `lumio-job`：有界 Worker、Typed Job、取消/超时与 Completion Batch。
-//!
-//! 状态机与竞态裁决见 `docs/specs/job-state-machine.md`（ADR 0004）；
-//! Worker 集作为 ContextResource 注册进 kernel-context。
-
+//! Bounded Rust job execution with cooperative cancellation and explicit reaping.
 #![forbid(unsafe_code)]
-
 mod cancel;
 mod completion;
 mod id;
@@ -12,11 +7,13 @@ mod operation;
 mod queue;
 mod state;
 mod worker;
-
 pub use cancel::{CancellationSource, CancellationView};
 pub use completion::{CompletionBatch, JobCompletion};
 pub use id::{JobId, OperationId};
 pub use operation::{OperationRegistry, TypedKernel};
 pub use queue::BoundedJobQueue;
 pub use state::{JobState, JobStateCell, JobStateMachine};
-pub use worker::{CancelOutcome, JobHandle, JobRequest, JobSnapshot, JobSystem, JobSystemConfig};
+pub use worker::{
+    CancelOutcome, JobExecution, JobHandle, JobRequest, JobResult, JobSnapshot, JobSystem,
+    JobSystemConfig,
+};

@@ -1,21 +1,15 @@
-//! Vendor-free spatial index backend seam. Adapters stay behind this trait.
-
+//! Object-safe spatial port; vendor types remain inside adapters.
 mod grid_reference;
+#[cfg(feature = "rstar-backend")]
 mod rstar_adapter;
-
-pub use grid_reference::GridReferenceIndex;
-pub use rstar_adapter::RStarIndexAdapter;
-
-use lumio_kernel::error::KernelResult;
-
 use crate::types::{Aabb3, SpatialObjectId};
-
-/// Object-safe index port. Signatures use crate POD types and kernel results only.
+pub use grid_reference::GridReferenceIndex;
+use lumio_kernel::error::KernelResult;
+#[cfg(feature = "rstar-backend")]
+pub use rstar_adapter::RStarIndexAdapter;
 pub trait SpatialIndexBackend: Send + Sync + 'static {
     fn upsert(&mut self, id: SpatialObjectId, aabb: Aabb3) -> KernelResult<()>;
     fn remove(&mut self, id: SpatialObjectId) -> KernelResult<()>;
-
-    /// Writes matching ids into `out` and returns the number written.
-    /// If `out` cannot hold every hit, returns `KernelError::buffer_too_small`.
+    /// Validate input, sort IDs, and leave out unchanged on any failure.
     fn query_aabb(&self, aabb: Aabb3, out: &mut [SpatialObjectId]) -> KernelResult<usize>;
 }

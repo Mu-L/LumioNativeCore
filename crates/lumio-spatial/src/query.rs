@@ -1,107 +1,114 @@
-//! Vendor-free batch AABB query. Hits are sorted; overflow does not write `out`.
-
-use lumio_kernel::error::{ErrorCategory, ErrorDetail, KernelError, KernelResult};
-
-use crate::index::{GridReferenceIndex, SpatialIndexBackend};
+//! Capacity-first batch queries with an injectable, independently tested backend.
+use crate::index::SpatialIndexBackend;
 use crate::types::{Aabb3, SpatialObjectId};
-
-/// One hit from a batched AABB query. Ordered by `(query_ordinal, object_id)`.
+use lumio_kernel::error::{ErrorCategory, ErrorDetail, KernelError, KernelResult};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SpatialHit {
     pub query_ordinal: u32,
     pub object_id: SpatialObjectId,
 }
-
-/// One AABB query in a batch. Ordinal is the slice index of this query.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AabbQuery {
     pub aabb: Aabb3,
 }
-
-/// Spatial index owner. Batch query is the sizing and sort surface.
-pub struct SpatialContext {
-    index: GridReferenceIndex,
+#[derive(Clone, Copy, Debug)]
+pub struct SpatialQueryLimits {
+    pub max_queries: usize,
+    pub max_hits: usize,
 }
-
+impl Default for SpatialQueryLimits {
+    fn default() -> Self {
+        Self {
+            max_queries: 4096,
+            max_hits: 262144,
+        }
+    }
+}
+pub struct SpatialContext {
+    index: Box<dyn SpatialIndexBackend>,
+    limits: SpatialQueryLimits,
+}
 impl Default for SpatialContext {
     fn default() -> Self {
         Self::new()
     }
 }
-
 impl SpatialContext {
     pub fn new() -> Self {
-        Self {
-            index: GridReferenceIndex::new(),
-        }
+        #[cfg(feature = "rstar-backend")]
+        let backend = crate::index::RStarIndexAdapter::new();
+        #[cfg(not(feature = "rstar-backend"))]
+        let backend = crate::index::GridReferenceIndex::new();
+        Self::with_backend(Box::new(backend), SpatialQueryLimits::default())
     }
-
+    pub fn with_backend(index: Box<dyn SpatialIndexBackend>, limits: SpatialQueryLimits) -> Self {
+        Self { index, limits }
+    }
     pub fn upsert(&mut self, id: SpatialObjectId, aabb: Aabb3) -> KernelResult<()> {
+        aabb.validate()?;
         self.index.upsert(id, aabb)
     }
-
-    /// Writes every matching hit into `out` and returns the number written.
-    ///
-    /// Hits are sorted by `(query_ordinal, object_id)`. If `out` cannot hold
-    /// the full result, returns `buffer_too_small` and leaves `out` unchanged.
+    pub fn remove(&mut self, id: SpatialObjectId) -> KernelResult<()> {
+        self.index.remove(id)
+    }
     pub fn query_aabb_batch(
         &self,
         queries: &[AabbQuery],
         out: &mut [SpatialHit],
     ) -> KernelResult<usize> {
-        let mut hits = Vec::new();
-        let mut scratch = Vec::new();
-        for (ordinal, query) in queries.iter().enumerate() {
-            let query_ordinal = u32::try_from(ordinal).map_err(|_| {
-                KernelError::new(
-                    ErrorCategory::CapacityExceeded,
-                    ErrorDetail::LimitExceeded {
-                        limit: u32::MAX as u64,
-                        requested: queries.len() as u64,
-                    },
-                )
-            })?;
-            let n = collect_query_ids(&self.index, query.aabb, &mut scratch)?;
-            hits.extend(scratch[..n].iter().copied().map(|object_id| SpatialHit {
-                query_ordinal,
-                object_id,
-            }));
+        if queries.len() > self.limits.max_queries || queries.len() > u32::MAX as usize {
+            return Err(capacity());
         }
-        hits.sort_unstable();
-
-        let required = hits.len();
-        if required > out.len() {
+        let mut sizes = Vec::with_capacity(queries.len());
+        let mut total = 0usize;
+        for query in queries {
+            query.aabb.validate()?;
+            let required = match self.index.query_aabb(query.aabb, &mut []) {
+                Ok(0) => 0,
+                Ok(_) => return Err(invariant()),
+                Err(error) if error.category() == ErrorCategory::BufferTooSmall => {
+                    match error.detail() {
+                        ErrorDetail::RequiredCapacity { required, .. } => {
+                            usize::try_from(*required).map_err(|_| capacity())?
+                        }
+                        _ => return Err(error),
+                    }
+                }
+                Err(error) => return Err(error),
+            };
+            total = total
+                .checked_add(required)
+                .filter(|n| *n <= self.limits.max_hits)
+                .ok_or_else(capacity)?;
+            sizes.push(required);
+        }
+        if total > out.len() {
             return Err(KernelError::buffer_too_small(
-                required as u64,
+                total as u64,
                 out.len() as u64,
             ));
         }
-        out[..required].copy_from_slice(&hits);
-        Ok(required)
+        let mut staged = Vec::with_capacity(total);
+        let mut scratch = Vec::new();
+        for (ordinal, (query, required)) in queries.iter().zip(sizes).enumerate() {
+            scratch.resize(required, SpatialObjectId::from_raw(0));
+            let written = self.index.query_aabb(query.aabb, &mut scratch)?;
+            if written != required {
+                return Err(invariant());
+            }
+            staged.extend(scratch.iter().map(|id| SpatialHit {
+                query_ordinal: ordinal as u32,
+                object_id: *id,
+            }));
+        }
+        staged.sort_unstable();
+        out[..total].copy_from_slice(&staged);
+        Ok(total)
     }
 }
-
-/// Fills `scratch` with ids for `aabb`. Grows from `buffer_too_small` then retries.
-fn collect_query_ids(
-    index: &GridReferenceIndex,
-    aabb: Aabb3,
-    scratch: &mut Vec<SpatialObjectId>,
-) -> KernelResult<usize> {
-    match index.query_aabb(aabb, scratch) {
-        Ok(n) => return Ok(n),
-        Err(err) if err.category() == ErrorCategory::BufferTooSmall => {
-            let needed = match err.detail() {
-                ErrorDetail::RequiredCapacity { required, .. } => {
-                    usize::try_from(*required).unwrap_or(usize::MAX)
-                }
-                _ => return Err(err),
-            };
-            if needed <= scratch.len() {
-                return Err(err);
-            }
-            scratch.resize(needed, SpatialObjectId::from_raw(0));
-        }
-        Err(err) => return Err(err),
-    }
-    index.query_aabb(aabb, scratch)
+fn capacity() -> KernelError {
+    KernelError::new(ErrorCategory::CapacityExceeded, ErrorDetail::None)
+}
+fn invariant() -> KernelError {
+    KernelError::new(ErrorCategory::InternalInvariant, ErrorDetail::None)
 }

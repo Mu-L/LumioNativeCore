@@ -1,9 +1,5 @@
-//! Single-point CAS linearization of job execution state.
-//!
-//! `TimedOut` is a completion observation (ADR 0004), not a CAS target.
-
+//! Atomic execution state. Running cancellation is finalized only by the worker.
 use std::sync::atomic::{AtomicU8, Ordering};
-
 const ORDER: Ordering = Ordering::SeqCst;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,26 +12,24 @@ pub enum JobState {
     Cancelled = 4,
     TimedOut = 5,
 }
-
-/// Slot CAS cell. Same type as [`JobStateMachine`].
+impl JobState {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
+    }
+}
 pub type JobStateCell = JobStateMachine;
-
 pub struct JobStateMachine {
     state: AtomicU8,
 }
-
 impl JobStateMachine {
     pub fn queued() -> Self {
         Self {
             state: AtomicU8::new(JobState::Queued as u8),
         }
     }
-
     pub fn snapshot(&self) -> JobState {
         decode(self.state.load(ORDER))
     }
-
-    /// Queued → Running.
     pub fn cas_start(&self) -> Result<(), JobState> {
         self.state
             .compare_exchange(
@@ -47,21 +41,23 @@ impl JobStateMachine {
             .map(|_| ())
             .map_err(decode)
     }
-
-    /// Queued or Running → Cancelled. `Ok` is the pre-CAS state.
+    /// Terminal transition for queued work or a worker's acknowledged cancel point.
+    /// A client cancelling running work must set the request token, not call this.
     pub fn cas_cancel(&self) -> Result<JobState, JobState> {
-        let current = self.snapshot();
-        match current {
-            JobState::Queued | JobState::Running => self
+        loop {
+            let current = self.snapshot();
+            if !matches!(current, JobState::Queued | JobState::Running) {
+                return Err(current);
+            }
+            if self
                 .state
                 .compare_exchange(current as u8, JobState::Cancelled as u8, ORDER, ORDER)
-                .map(|_| current)
-                .map_err(decode),
-            other => Err(other),
+                .is_ok()
+            {
+                return Ok(current);
+            }
         }
     }
-
-    /// Running → Succeeded or Failed.
     pub fn cas_complete(&self, to: JobState) -> Result<(), JobState> {
         if !matches!(to, JobState::Succeeded | JobState::Failed) {
             return Err(self.snapshot());
@@ -72,7 +68,6 @@ impl JobStateMachine {
             .map_err(decode)
     }
 }
-
 fn decode(raw: u8) -> JobState {
     match raw {
         0 => JobState::Queued,
@@ -81,6 +76,6 @@ fn decode(raw: u8) -> JobState {
         3 => JobState::Failed,
         4 => JobState::Cancelled,
         5 => JobState::TimedOut,
-        _ => unreachable!("invalid job state encoding"),
+        _ => unreachable!("invalid job state"),
     }
 }

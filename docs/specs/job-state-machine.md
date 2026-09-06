@@ -1,67 +1,35 @@
-# Job 状态机、取消线性化与时钟域契约（设计现状）
+# Job 执行、取消与结果回收（当前 Rust 实现）
 
-> 对应决策：[`0004`](../../.spec/decisions/0004-job-state-machine-and-clock-port.md)。
-> 来源：架构 Review `ARCH-P0-004` 与 `ARCH-P1-008`。
-> 状态：设计已定；公开状态枚举值、operation ID registry 待架构源冻结。
+## 唯一运行状态
 
-## 1. 状态集合与合法转移
+JobSystem 由调度 mutex 串行发布 Queued、Running 和真实终态 Succeeded/Failed/Cancelled。Kernel 在锁外执行。独立 JobStateMachine 仍作为 CAS 原语提供，但不是第二份 JobSystem 权威状态。
 
-```text
-            submit
-Created ────────────> Queued ──────> Running ──────> Completed
-(内部瞬态)               │               │        └──> Failed
-                        │               │        └──> Cancelled   （协作取消点生效）
-                        │               └─ CancelRequested 标志（不新增状态，见 §2）
-                        └────────────> Cancelled                  （出队前取消，立即终态）
+TimedOut 保留为旧观察词汇，不是执行状态；JobResult.deadline_exceeded 记录截止时间观察。已完成工作保留真实结果，不因为外部稍晚观察就伪造超时。
 
-任一终态（Completed / Failed / Cancelled）──consume 或回收──> Reaped
-Context 关闭排空超时：任何非终态 Job ──> Abandoned（交 reaper 等真实终态后 Reaped）
-```
+## 执行与容量
 
-- `TimedOut` 不是执行状态，是 **Completion 记录上的观察结果**（见 §3）；
-  底层执行终态仍是 Cancelled/Completed/Failed 之一。
-- 状态转移在 Job 槽位上单点 CAS 线性化；每个转移恰好发生一次。
-- `Reaped` 后 Job Handle 失效（Generation 递增），租约释放（见 [Buffer 契约](ffi-buffer-ownership.md) §3）。
+TypedKernel.execute 接收输入切片、有界输出切片和 JobExecution；仅注册 ID 没有实现 execute 时返回 CapabilityUnavailable。submit_input 在发布前复制输入、预留输出和字节租约。第三方 Kernel 内部自行分配的工作内存不在这份字节账本内，供应方必须额外声明工作预算。
 
-## 2. 竞态裁决表（唯一赢家 + 双方可见结果）
+worker_count=0 为显式手动 pump；正数为有限 worker。queue_capacity 限制等待队列；min(max_handles,max_completion_items) 限制每个 JobSystem 的未回收任务。各系统配置不得超过 Context 上限；Context 的共享字节预算跨系统汇总。元数据/工作线程数量是按系统限制，并非整个进程统一配额。
 
-| 竞态 | 裁决 | API 可见结果 |
-| --- | --- | --- |
-| cancel vs 出队执行 | 谁先 CAS Queued 谁赢 | 取消赢 → 立即 `Cancelled`；执行赢 → cancel 变为置 CancelRequested |
-| cancel vs complete | Running 中 Worker 到达终态点先 CAS 者赢 | complete 赢 → cancel 返回 `AlreadyTerminal`；cancel 生效 → 结果为 `Cancelled` |
-| 重复 cancel | 首次置标志，其余幂等 | 均返回当前状态，不报错 |
-| timeout vs complete | 见 §3——timeout 只是观察，complete 永远按实际终态记录 | Deadline 已过但已完成 → 记录 `Completed`（不伪造 TimedOut） |
-| close vs submit | Context 状态锁先到者赢（见 [KernelContext 契约](kernel-context-lifecycle.md) §3） | submit 输 → `ContextClosing` |
-| 结果丢失（消费边界后再查询） | Reaped 即终 | 查询返回 `JobReaped`，与 `UnknownJob` 可区分 |
+完成但未 take_result 的任务仍占容量。没有消费者时产生背压，不无限追加历史。JobHandle 验证 Context 和 System，JobId 在进程内 checked increment，不复用。
 
-## 3. Deadline 与时钟域
+## 取消与 Deadline
 
-- **NativeCore 只拥有一个私有、可注入的单调时钟 port**（`monotonic-clock port`）：
-  用于 Deadline 判定、队列等待计量与测试注入（fake clock）。
-- 跨 ABI 只接受**相对 duration**；Wall Clock 归 Host，Logical Tick/Phase 归 Runtime——
-  NativeCore 不读取、不换算、不存储日历时间与 TickId（诊断字段中的 TickId 由调用方传入，原样承载）。
-- Deadline 语义：到期时置 CancelRequested 并在 Completion 记录标注 `deadline_exceeded`；
-  **不终止线程**。Worker 在协作取消点检查标志；无取消点的长核必须声明最大粒度预算。
-- 确定性边界：任何时钟读数、等待时长、完成时刻**只进 Diagnostics**，
-  不进入权威结果与 State Hash；确定性 Kernel 的输出内容与 canonical 顺序在不同调度下必须逐位一致，
-  Completion 消费顺序按 JobId canonical 排序提供（调用方可选按到达序，但该序不参与 Hash）。
+Queued 取消从队列移除并进入真实 Cancelled；Running 取消仅返回 Requested 并设置 token。Worker 在有限间隔调用 check_cancelled 才转终态；不能在请求取消时释放仍在执行的输入。
 
-## 4. 执行体边界
+Kernel 成功返回且输出长度合法则按实际成功记录；取消请求不覆盖已经完成的实际计算。Kernel 返回 Cancelled/TimedOut 表示取消被观察。panic 被转换为失败结果；仅适用于 unwind 配置，abort 无法被捕获。
 
-- Worker 只执行 **Rust 内部闭包或架构源注册的 Typed Kernel（operation ID + 版本化参数）**。
-- 公共 ABI **不接受**调用方函数指针、managed delegate 或任何回调形式的执行体；
-  「闭包」仅是 Rust 实现内部形态，不出现在 Header。
-- Job 不编译期依赖 `spatial`/`codec`；两者作为 operation 经 registry 运行时绑定。
+## Completion 与回收
 
-## 5. 关闭与排空
+`drain_completions` 按本次已就绪快照中的 JobId 排序，只返回通知，不释放任务。它不承诺跨多次异步 drain 的全局顺序；确定性消费者须定义等待的完整集合和消费 barrier。
 
-Worker 关闭只由 Context 关闭序列驱动：拒新 → 置取消 → 排空至 deadline → Abandon 交 reaper。
-Worker 线程 join 发生在资源销毁步之前；join 超时 → `Faulted`（证据保留）。
+`take_result(handle)` 仅接受终态，移除调度元数据，使 Handle 失效并返回 JobResult。结果字节和 reservation 同寿命；drop result 才返还预算。可直接 take_result，不必先 drain。
 
-## 6. Conformance Fixture
+独立 CompletionBatch 不是 JobSystem 的第二份权威存储。它要求单调递增 ID 发布，活租约受容量限制，release 需先 drain，最近释放诊断只保留有界窗口；更老的释放返回 InvalidHandle。高水位阻止旧 ID 再发布，不永久保存墓碑。
 
-- §2 每行竞态：固定 interleaving（注入调度点）+ 随机并发双跑，验证唯一赢家与错误码。
-- fake clock 注入：Deadline 到期前/后完成两分支；`deadline_exceeded` 标注正确且不影响权威结果。
-- 取消协作点延迟释放：cancel 后租约仍在，Worker 到达取消点才 Reaped。
-- 队列满载返回容量错误且不建立租约；关闭期间 submit 稳定拒绝。
-- 确定性 Kernel 在 1/4/16 Worker 配置下输出逐位一致；等待时间只出现在 Diagnostics。
+## 关闭与消费迁移
+
+JobSystem 注册为 ContextResource，反向仅持 Weak Context。调用方保留 Context 并明确驱动 close。停止后不再出队，排队任务取消；运行任务保持租约直到真实结束；quiesce 不 join 活线程，destroy 只 join 已退出线程。旧仅持 JobSystem 的装配必须同步修正。
+
+回归：audit_execution、worker_never_executes_under_scheduler_lock、job_state_machine 及原有 CAS/Completion 用例。

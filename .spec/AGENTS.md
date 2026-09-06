@@ -10,7 +10,7 @@
 `LumioNativeCore` 是跨项目复用的 Rust Native Kernel，拥有内存/Handle、Job、空间、碰撞、Codec 与领域无关高性能计算原语。
 
 - 本仓不定义任何跨语言 ABI：唯一 ABI 真值是架构仓 `LumioGameEngine` 的 `engine/abi/native-abi.json`，插头代码也在那边；本仓不保存任何镜像（ADR 0009）。
-- 本仓位于依赖图底层，不拥有 Voxel、Gameplay、Session、网络或 Host 语义，稳定边界是版本化 C ABI。
+- 本仓位于依赖图底层，不拥有 Voxel、Gameplay、Session、网络或 Host 语义，稳定源码边界是公开 Rust API；C ABI 归架构仓 SDK 插头。
 - 开工前先读 [`repository-architecture.md`](knowledge/standards/repository-architecture.md)；详细模块边界见根 [`README.md`](../README.md)。
 
 ## 调度核心
@@ -64,3 +64,7 @@ Codex 主 loop 本地执行:设计与计划用 `brainstorming` / `writing-plans`
 - 结构一致性由 `node .spec/tools/spec-lint.mjs` 校验,改完 `.spec/` 必跑;校验项清单以脚本头部注释为单一权威。
 
 > 硬性禁令(不得再派生子 Agent、frontmatter 限制、调度变更须同步)在 [`rules/system.md`](rules/system.md)。
+
+## Native 高风险改动
+
+所有权、关闭/准入线性化、Generation、取消、回收、预算、验证器和测试预期的修改，不论 diff 行数多少，都不能按小改动免审。测试专用 feature 必须在 all-features CI 中验证；不得只改 Golden 或删除断言让 CI 变绿。

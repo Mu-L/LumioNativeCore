@@ -9,3 +9,11 @@ lumio-platform = { path = "../lumio-platform" }
 
 [dev-dependencies]
 lumio-test-support = { path = "../lumio-test-support" }
+
+[features]
+default = []
+test-support = []
+
+[[test]]
+name = "generation_overflow_retires_slot_permanently"
+required-features = ["test-support"]

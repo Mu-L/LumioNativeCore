@@ -35,19 +35,8 @@ metadata:
 
 ## 项目测试栈与命令
 
-当前仓库尚未提交 Rust 实现工程；现阶段默认验证为：
+本仓已有 Rust workspace。当前命令以根 README 的收口门槛为单一清单。默认与 all-features 都必须执行；原型及 test-support 测试不会因默认关闭而退出 CI。
 
-```text
-node .spec/tools/spec-lint.mjs
-node --test .spec/tools/spec-lint.test.mjs
-```
+跨仓 SDK/Host、Miri、负载和平台运行时验收单独记录实际输入 SHA、命令和输出；未运行不等于通过。单元测试不能以阶段名、固定成功或 Mock 计数代替真实执行结果。
 
-首次引入 Cargo 工程时，必须加入 `cargo fmt --check`、`cargo clippy`、单元/并发测试、Miri/Sanitizer 与跨平台构建矩阵。改到本仓 crate 公开 Rust API 时，还必须在架构仓 `engine/native` 复跑 `cargo build -p lumio-engine-native` 与 `cargo test -p lumio-engine-native`——那是本仓唯一的消费者。
-
-## 本仓 Headless / 契约测试面
-
-- ABI Layout/Smoke、Handle 生命周期、错误码、并发、取消、重复释放和内存泄漏。
-- Miri/Sanitizer/线程模型检查、跨平台构建和符号检查。
-- Spatial/Codec/Job Benchmark，记录吞吐、p95/p99、分配和峰值内存。
-- Fault Fixture：失效 Handle、Buffer 不足、Job 超时、panic 转换、重复加载和 Capability 缺失。
-- Failure Bundle 使用统一字段；State Hash 只覆盖明确标记为确定性的 Kernel 输出，不含缓存地址或线程时序。
+关键回归包括 Pending 不销毁、登记与关闭竞争、旧 Handle 不影响新对象、运行中取消不提前回收、结果字节租约、有界历史、Timer 补发预检、AABB 真实入口验证以及独立空间后端对拍。

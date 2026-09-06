@@ -44,7 +44,6 @@ Handle 的不透明性和失效语义属于 ABI 契约；改变宽度、Context 
 
 ## 相关
 
-- [ABI 模块](../abi/README.md)
 - [错误模块](../error/README.md)
 - [kernel-context 模块](../kernel-context/README.md)
 - [根 README](../../README.md)

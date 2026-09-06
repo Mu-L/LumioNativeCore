@@ -171,6 +171,7 @@ impl<T> HandleArena<T> {
 
     /// Test hook: set a free slot's generation without cycling insert/remove.
     #[doc(hidden)]
+    #[cfg(feature = "test-support")]
     pub fn force_generation(&mut self, index: u32, generation: Generation) {
         self.slots[index as usize].generation = generation;
     }

@@ -7,3 +7,19 @@ publish.workspace = true
 [dependencies]
 lumio-kernel = { path = "../lumio-kernel" }
 lumio-platform = { path = "../lumio-platform" }
+
+[features]
+default = []
+prototype = []
+
+[[test]]
+name = "drop_counter_matches_rejected_records"
+required-features = ["prototype"]
+
+[[test]]
+name = "full_queue_never_blocks_producer"
+required-features = ["prototype"]
+
+[[test]]
+name = "owned_record_enforces_field_and_byte_limits"
+required-features = ["prototype"]

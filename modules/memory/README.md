@@ -45,7 +45,6 @@
 ## 相关
 
 - [FFI Buffer 所有权契约](../../docs/specs/ffi-buffer-ownership.md)
-- [ABI 模块](../abi/README.md)
 - [错误模块](../error/README.md)
 - [Job 模块](../job/README.md)
 - [根 README](../../README.md)

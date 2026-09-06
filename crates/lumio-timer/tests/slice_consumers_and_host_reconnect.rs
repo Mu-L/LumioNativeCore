@@ -1,5 +1,4 @@
-//! Slice consumers: Bot cadence and server periodic on the tickFrame kernel;
-//! five-minute reconnect on the same kernel in wallClock mode.
+//! Consumer-owned policies use generic timer delivery, not production business events.
 
 use lumio_timer::{
     BOT_CHAT_CADENCE_DISPATCH, BOT_CHAT_CADENCE_TICKS, DispatchId, DispatchTarget,
@@ -36,15 +35,14 @@ fn bot_chat_cadence_runs_on_tick_frame_kernel() {
         BOT_CHAT_CADENCE_TICKS,
     );
     manager.advance(20).expect("advance");
-    let _ = manager.drain();
+    let delivered = manager.drain();
+    assert_eq!(delivered.delivered().len(), 4);
     assert_eq!(manager.trace().bot_utterance_ticks(), [5, 10, 15, 20]);
-    assert!(
-        manager
-            .trace()
-            .events()
-            .iter()
-            .any(|e| matches!(e, SliceTraceEvent::BotUtteranceSubmit { due_tick: 5 }))
-    );
+    assert!(manager.trace().events().iter().any(|event| matches!(
+        event,
+        SliceTraceEvent::Dispatched { dispatch_id, due_tick: 5 }
+            if *dispatch_id == BOT_CHAT_CADENCE_DISPATCH
+    )));
 }
 
 #[test]
@@ -59,14 +57,14 @@ fn server_periodic_task_runs_on_tick_frame_kernel() {
         SERVER_WORLD_HEARTBEAT_TICKS,
     );
     manager.advance(20).expect("advance");
-    let _ = manager.drain();
+    let delivered = manager.drain();
+    assert_eq!(delivered.delivered().len(), 2);
     assert_eq!(manager.trace().server_checkpoint_ticks(), [10, 20]);
-    assert!(manager.trace().events().iter().any(|e| matches!(
-        e,
-        SliceTraceEvent::ServerPeriodicCheckpoint {
-            due_tick: 10,
-            live_timers: 1
-        }
+    assert_eq!(manager.live_timer_count(), 1);
+    assert!(manager.trace().events().iter().any(|event| matches!(
+        event,
+        SliceTraceEvent::Dispatched { dispatch_id, due_tick: 10 }
+            if *dispatch_id == SERVER_WORLD_HEARTBEAT_DISPATCH
     )));
 }
 
@@ -75,7 +73,6 @@ fn reconnect_deadline_runs_on_kernel_wall_clock() {
     let mut wall = TimerManager::with_mode(3, TimerMode::WallClock);
     let mut ticks_client = TimerManager::new(1);
     let mut ticks_server = TimerManager::new(2);
-
     schedule_slice_repeating(
         &mut ticks_client,
         1,
@@ -90,7 +87,6 @@ fn reconnect_deadline_runs_on_kernel_wall_clock() {
         SERVER_WORLD_HEARTBEAT_DISPATCH,
         SERVER_WORLD_HEARTBEAT_TICKS,
     );
-
     let wall_scope = wall
         .register_scope(1, ScopeKind::Session)
         .expect("wall scope");
@@ -100,22 +96,17 @@ fn reconnect_deadline_runs_on_kernel_wall_clock() {
     let handle = wall
         .schedule_one_shot(wall_scope, RECONNECT_RETENTION_MS, wall_slot)
         .expect("reconnect window");
-
     ticks_client.advance(20).expect("native client ticks");
-    let _ = ticks_client.drain();
+    ticks_client.drain();
     ticks_server.advance(20).expect("native server ticks");
-    let _ = ticks_server.drain();
+    ticks_server.drain();
     let early = wall
         .pump(RECONNECT_RETENTION_MS - 1)
         .expect("pump before five minutes");
-    assert!(
-        early.firings().is_empty(),
-        "tick advance must not fire the wallClock reconnect deadline"
-    );
+    assert!(early.firings().is_empty());
     assert!(wall.drain_records().expect("drain early").is_empty());
     assert!(!ticks_client.trace().bot_utterance_ticks().is_empty());
     assert!(!ticks_server.trace().server_checkpoint_ticks().is_empty());
-
     let expired = wall.pump(RECONNECT_RETENTION_MS).expect("pump at 300s");
     assert_eq!(expired.firings().len(), 1);
     assert_eq!(expired.firings()[0].handle, handle);
@@ -126,16 +117,17 @@ fn reconnect_deadline_runs_on_kernel_wall_clock() {
     let records = wall.drain_records().expect("drain reconnect");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].due_tick, RECONNECT_RETENTION_MS);
-    assert_eq!(
-        wall.cancel(handle),
-        Err(lumio_timer::TimerError::StaleHandle)
-    );
+    assert_eq!(wall.cancel(handle), Err(lumio_timer::TimerError::StaleHandle));
     assert!(
         ticks_client
             .trace()
             .events()
             .iter()
             .chain(ticks_server.trace().events())
-            .all(|e| !format!("{e:?}").to_ascii_lowercase().contains("reconnect"))
+            .all(|event| matches!(
+                event,
+                SliceTraceEvent::Dispatched { dispatch_id, .. }
+                    if *dispatch_id != RECONNECT_RETENTION_DISPATCH
+            ))
     );
 }

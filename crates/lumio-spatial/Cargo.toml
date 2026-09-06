@@ -4,5 +4,17 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+default = ["rstar-backend"]
+rstar-backend = ["dep:rstar"]
+
 [dependencies]
 lumio-kernel = { path = "../lumio-kernel" }
+rstar = { version = "=0.12.2", optional = true }
+
+[[test]]
+name = "rstar_matches_reference_corpus"
+required-features = ["rstar-backend"]
+[[test]]
+name = "backend_trait_does_not_expose_vendor_types"
+required-features = ["rstar-backend"]

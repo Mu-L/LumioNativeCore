@@ -4,5 +4,37 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
-[dev-dependencies]
-lumio-test-support = { path = "../lumio-test-support" }
+[features]
+default = []
+test-support = []
+
+[[test]]
+name = "callback_slot_lifecycle_and_failures"
+required-features = ["test-support"]
+[[test]]
+name = "cancel_prevents_delivery"
+required-features = ["test-support"]
+[[test]]
+name = "delivery_order_stable_and_replayable"
+required-features = ["test-support"]
+[[test]]
+name = "generation_overflow_is_fatal"
+required-features = ["test-support"]
+[[test]]
+name = "input_validation_budget_and_shutdown"
+required-features = ["test-support"]
+[[test]]
+name = "one_shot_fires_exactly_once"
+required-features = ["test-support"]
+[[test]]
+name = "repeating_fires_each_interval"
+required-features = ["test-support"]
+[[test]]
+name = "slice_consumers_and_host_reconnect"
+required-features = ["test-support"]
+[[test]]
+name = "stale_handle_and_scope_failures"
+required-features = ["test-support"]
+[[test]]
+name = "wall_clock_mode"
+required-features = ["test-support"]

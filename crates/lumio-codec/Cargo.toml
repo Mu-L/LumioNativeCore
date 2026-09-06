@@ -6,3 +6,19 @@ publish.workspace = true
 
 [dependencies]
 lumio-kernel = { path = "../lumio-kernel" }
+
+[features]
+default = []
+prototype = []
+
+[[test]]
+name = "codec_workspace_is_reclaimed_on_close"
+required-features = ["prototype"]
+
+[[test]]
+name = "lz4_decompress_rejects_truncated_input"
+required-features = ["prototype"]
+
+[[test]]
+name = "zstd_decompress_rejects_expansion_limit"
+required-features = ["prototype"]

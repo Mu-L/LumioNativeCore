@@ -1,14 +1,11 @@
 name: Repository Policy
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
 permissions:
   contents: read
-
 jobs:
   readme:
     name: README policy
@@ -31,19 +28,41 @@ jobs:
           grep -q '^## 职责$' README.md
           grep -q '^## 明确不负责什么$' README.md
           grep -q '^## 收口门槛$' README.md
-
   native:
-    name: Native workspace checks
-    runs-on: ubuntu-latest
+    name: Native workspace checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Format, lint, build, test
-        run: |
-          cargo fmt --all --check
-          cargo clippy --workspace --all-targets -- -D warnings
-          cargo build --workspace
-          cargo test --workspace
-      - name: Dependency DAG and artifact-shape assertions
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - name: Build all features
+        run: cargo build --workspace --all-features
+      - name: Test default surface
+        if: always()
+        run: cargo test --workspace
+      - name: Test prototypes and fixture-only APIs
+        if: always()
+        run: cargo test --workspace --all-features
+      - name: Lint all targets and features
+        if: always()
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Formatting
+        if: always()
+        run: cargo fmt --all --check
+      - name: Dependency and artifact assertions
+        if: always()
         run: |
           cargo xtask check-dep-dag
           cargo xtask assert-no-native-artifacts
+          python -m unittest discover -s tools -p 'test_*.py'
+      - name: Reference-only spatial build
+        if: always()
+        run: cargo test -p lumio-spatial --no-default-features
