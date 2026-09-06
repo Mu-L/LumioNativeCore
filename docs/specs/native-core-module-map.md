@@ -27,3 +27,19 @@ KernelContext Arc 由装配方持有，registry 保存 ContextResource。JobSyst
 当前 Spatial 只包括 AABB 能力，不把完整 BVH/距离/邻域规划视为已经完成。Codec/Diagnostics 的 feature 隔离是真实代码隔离，不是 README 标签。Timer 的 SDK 消费路径存在，不证明此次破坏式更新已经跨仓通过。
 
 当前实现与测试入口见根 README、job-state-machine、kernel-context-lifecycle、spatial-backend 和 docs/reviews/2026-09-06-native-remediation.md。测试、真实消费、负载结果分开记录。
+
+## 文档模块 ↔ crate 映射
+
+各模块的设计与边界文档已内聚到对应的 `crates/` 目录内，不再保留顶层 `modules/` 目录；编译边界按下表，后续调整须新 ADR：
+
+| crate | 承载文档模块与路径 | 类型 |
+| --- | --- | --- |
+| `lumio-platform` | —（monotonic clock port 等） | rlib，private |
+| `lumio-kernel` | 根 [`crates/lumio-kernel/README.md`](../../crates/lumio-kernel/README.md)（子原语：[`error`](../../crates/lumio-kernel/src/error/README.md)、[`capability`](../../crates/lumio-kernel/src/capability/README.md)、[`handle`](../../crates/lumio-kernel/src/handle/README.md)、[`memory`](../../crates/lumio-kernel/src/memory/README.md)、[`context`](../../crates/lumio-kernel/src/context/README.md)） | rlib |
+| `lumio-job` | [`crates/lumio-job/README.md`](../../crates/lumio-job/README.md) | rlib |
+| `lumio-spatial` | [`crates/lumio-spatial/README.md`](../../crates/lumio-spatial/README.md) | rlib |
+| `lumio-timer` | [`crates/lumio-timer/README.md`](../../crates/lumio-timer/README.md) | rlib |
+| `lumio-hfsm` | [`crates/lumio-hfsm/README.md`](../../crates/lumio-hfsm/README.md) | rlib |
+| `lumio-codec` | [`crates/lumio-codec/README.md`](../../crates/lumio-codec/README.md) | rlib，**experimental/private** |
+| `lumio-diagnostics` | [`crates/lumio-diagnostics/README.md`](../../crates/lumio-diagnostics/README.md) | rlib，**experimental/private** |
+| `lumio-test-support` | — | dev-only |

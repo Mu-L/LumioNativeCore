@@ -44,5 +44,6 @@ Capability 键是本仓内部的不透明数值，由嵌入方（架构仓 SDK�
 
 ## 相关
 
+- [仓库架构契约](../../../../.spec/knowledge/standards/repository-architecture.md)
 - [错误模块](../error/README.md)
-- [根 README](../../README.md)
+- [根 README](../../../../README.md)

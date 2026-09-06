@@ -26,7 +26,7 @@ Handle 只表示 NativeCore 内部资源，不表示 ECS Entity、NetEntity、Wo
 
 ## 依赖与约束
 
-依赖 `error` 的稳定失败类别；不得依赖 Voxel、Runtime、Server、Client 或 Game。Context 的创建、排空与关闭时序由 `kernel-context` 统一裁决（ADR 0002）；Generation 溢出槽位永久退休、ContextId 单调不复用，规则见 [`kernel-context-lifecycle.md`](../../docs/specs/kernel-context-lifecycle.md) §4，并有版本化测试约束。
+依赖 `error` 的稳定失败类别；不得依赖 Voxel、Runtime、Server、Client 或 Game。Context 的创建、排空与关闭时序由 `kernel-context` 统一裁决（ADR 0002）；Generation 溢出槽位永久退休、ContextId 单调不复用，规则见 [`kernel-context-lifecycle.md`](../../../../docs/specs/kernel-context-lifecycle.md) §4，并有版本化测试约束。
 
 ## 线程、错误与观测
 
@@ -44,6 +44,7 @@ Handle 的不透明性和失效语义属于 ABI 契约；改变宽度、Context 
 
 ## 相关
 
+- [仓库架构契约](../../../../.spec/knowledge/standards/repository-architecture.md)
 - [错误模块](../error/README.md)
-- [kernel-context 模块](../kernel-context/README.md)
-- [根 README](../../README.md)
+- [kernel-context 模块](../context/README.md)
+- [根 README](../../../../README.md)

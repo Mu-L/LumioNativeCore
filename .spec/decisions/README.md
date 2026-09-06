@@ -20,3 +20,4 @@
 | [0008](0008-timer-kernel-enters-native-abi.md) | 唯一定时内核经 SDK 导出 | 生效 |
 | [0009](0009-exit-legacy-contract-regime.md) | 退出合同镜像制度 | 生效 |
 | [0010](0010-native-runtime-remediation.md) | 真实执行、有界生命周期、原型隔离和验证 | 生效 |
+| [0011](0011-hfsm-stateless-evaluator.md) | 新增 lumio-hfsm：无状态 HFSM 迁移计算器，宿主持有 Snapshot，无回调无时钟 | 生效 |

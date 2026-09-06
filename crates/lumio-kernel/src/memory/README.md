@@ -22,7 +22,7 @@
 
 ## 输入、输出与所有权
 
-释放方按 allocator provenance 判定——谁分配谁释放，NativeCore 永不释放调用方内存，调用方只能经 release API 归还 Native 内存。借用 Buffer 只在声明的调用范围内有效；返回的地址、长度和对齐必须满足 ABI 约束。异步 Job 只能接收 `NativeOwnedBufferHandle`，借用字节须在 submit 时复制——Buffer 三分类与租约协议见 [`ffi-buffer-ownership.md`](../../docs/specs/ffi-buffer-ownership.md)（ADR 0003）。释放操作重复调用必须返回可诊断结果，不得静默忽略错误。
+释放方按 allocator provenance 判定——谁分配谁释放，NativeCore 永不释放调用方内存，调用方只能经 release API 归还 Native 内存。借用 Buffer 只在声明的调用范围内有效；返回的地址、长度和对齐必须满足 ABI 约束。异步 Job 只能接收 `NativeOwnedBufferHandle`，借用字节须在 submit 时复制——Buffer 三分类与租约协议见 [`ffi-buffer-ownership.md`](../../../../docs/specs/ffi-buffer-ownership.md)（ADR 0003）。释放操作重复调用必须返回可诊断结果，不得静默忽略错误。
 
 ## 依赖与约束
 
@@ -44,7 +44,8 @@
 
 ## 相关
 
-- [FFI Buffer 所有权契约](../../docs/specs/ffi-buffer-ownership.md)
+- [FFI Buffer 所有权契约](../../../../docs/specs/ffi-buffer-ownership.md)
+- [仓库架构契约](../../../../.spec/knowledge/standards/repository-architecture.md)
 - [错误模块](../error/README.md)
-- [Job 模块](../job/README.md)
-- [根 README](../../README.md)
+- [Job 模块](../../../lumio-job/README.md)
+- [根 README](../../../../README.md)

@@ -55,6 +55,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumio-hfsm"
+version = "0.0.0"
+dependencies = [
+ "lumio-kernel",
+]
+
+[[package]]
 name = "lumio-job"
 version = "0.0.0"
 dependencies = [

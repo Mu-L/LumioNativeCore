@@ -8,17 +8,18 @@
 
 ## crate 一览
 
-| crate | 当前实现范围 | 交付边界 |
-| --- | --- | --- |
-| lumio-platform | 可注入单调时钟、Deadline | Rust 原语；不进入权威状态 Hash |
-| lumio-kernel | Handle、字节预算、资源登记、可续推进关闭 | Rust 实现；公开源码 API 可演进，不承诺二进制 Rust ABI |
-| lumio-job | 实际 Kernel 执行、有界队列/未回收任务、协作取消、结果与回收 | 实现与回归已加入；跨仓与长期负载另行验收 |
-| lumio-timer | 单调毫秒/逻辑刻度、排队与消费、有限补发预算 | 有 SDK 消费路径；本次修改后必须重编验证 |
-| lumio-spatial | AABB 更新/删除/批量交叠，真实 rstar 与独立参考后端 | 不声称完整 BVH、距离或连续碰撞已实现 |
-| lumio-codec | 默认只有字节校验和限制值；压缩接缝需 prototype | 尚非可用 LZ4/Zstd 解码器 |
-| lumio-diagnostics | prototype 下的有界记录器 | 未集成通用 RecordPort |
-| lumio-test-support | 测试时钟、交错辅助 | dev-only |
-| xtask | Cargo metadata 检查启动器 | 真实成员、可选/平台/build 依赖与产物类型 |
+| crate | 当前实现范围 | 交付边界 | 模块文档 |
+| --- | --- | --- | --- |
+| `lumio-platform` | 可注入单调时钟、Deadline | Rust 原语；不进入权威状态 Hash | — |
+| `lumio-kernel` | Handle、字节预算、资源登记、可续推进关闭 | Rust 实现；公开源码 API 可演进，不承诺二进制 Rust ABI | [`kernel`](crates/lumio-kernel/README.md)（[`error`](crates/lumio-kernel/src/error/README.md) · [`capability`](crates/lumio-kernel/src/capability/README.md) · [`handle`](crates/lumio-kernel/src/handle/README.md) · [`memory`](crates/lumio-kernel/src/memory/README.md) · [`context`](crates/lumio-kernel/src/context/README.md)） |
+| `lumio-job` | 实际 Kernel 执行、有界队列/未回收任务、协作取消、结果与回收 | 实现与回归已加入；跨仓与长期负载另行验收 | [`job`](crates/lumio-job/README.md) |
+| `lumio-timer` | 单调毫秒/逻辑刻度、排队与消费、有限补发预算 | 有 SDK 消费路径；本次修改后必须重编验证 | [`timer`](crates/lumio-timer/README.md) |
+| `lumio-spatial` | AABB 更新/删除/批量交叠，真实 rstar 与独立参考后端 | 不声称完整 BVH、距离或连续碰撞已实现 | [`spatial`](crates/lumio-spatial/README.md) |
+| `lumio-hfsm` | 无状态 HFSM 迁移计算器：数据定义状态图、宿主持 Snapshot、批量迁移计划 | 实施中 | [`hfsm`](crates/lumio-hfsm/README.md) |
+| `lumio-codec` | 默认只有字节校验和限制值；压缩接缝需 prototype | 尚非可用 LZ4/Zstd 解码器 | [`codec`](crates/lumio-codec/README.md) |
+| `lumio-diagnostics` | prototype 下的有界记录器 | 未集成通用 RecordPort | [`diagnostics`](crates/lumio-diagnostics/README.md) |
+| `lumio-test-support` | 测试时钟、交错辅助 | dev-only | — |
+| `xtask` | Cargo metadata 检查启动器 | 真实成员、可选/平台/build 依赖与产物类型 | — |
 
 模块存在、编译通过、消费者通过、负载通过是四种不同结论。[修复记录与迁移说明](docs/reviews/2026-09-06-native-remediation.md)列出实现范围与验证边界。
 

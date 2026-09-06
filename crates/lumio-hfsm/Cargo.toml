@@ -1,0 +1,8 @@
+[package]
+name = "lumio-hfsm"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+lumio-kernel = { path = "../lumio-kernel" }

@@ -27,6 +27,7 @@ metadata:
 |------|--------|
 | [`features/_TEMPLATE.md`](features/_TEMPLATE.md) | 新功能文档模板——新增功能记录时照此建,放对 领域 / 模块 |
 | [`features/timer-manager.md`](features/timer-manager.md) | Native 单一定时内核（wallClock + tickFrame）与 Server/Client adapter——查调度、CallbackSlot、ABI 槽或切片消费者时读 |
+| [`features/hfsm.md`](features/hfsm.md) | 无状态 HFSM 迁移计算器（lumio-hfsm）——建定义、宿主持 Snapshot、批量 evaluate 出计划；接入或写 driver 时读 |
 
 ## lessons(经验教训 · 复发问题暂存区)
 

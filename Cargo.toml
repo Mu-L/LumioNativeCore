@@ -6,6 +6,7 @@ members = [
     "crates/lumio-job",
     "crates/lumio-spatial",
     "crates/lumio-timer",
+    "crates/lumio-hfsm",
     "crates/lumio-codec",
     "crates/lumio-diagnostics",
     "crates/lumio-test-support",

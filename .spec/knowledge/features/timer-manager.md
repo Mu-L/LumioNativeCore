@@ -27,5 +27,5 @@ ADR-056 §7：定时内核只有一个，在 NativeCore。C-4′ 把托管可达
 ## 相关
 
 - [ADR 0008](../../decisions/0008-timer-kernel-enters-native-abi.md)（取代 [ADR 0007](../../decisions/0007-timer-manager-in-process-api.md)）
-- [`modules/timer/README.md`](../../../modules/timer/README.md)
+- [`crates/lumio-timer/README.md`](../../../crates/lumio-timer/README.md)
 - 架构源 ADR-056 §7 / C-4′

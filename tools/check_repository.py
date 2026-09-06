@@ -15,6 +15,7 @@ ALLOWED = {
     'lumio-codec': {'lumio-kernel'},
     'lumio-diagnostics': {'lumio-kernel', 'lumio-platform'},
     'lumio-test-support': {'lumio-kernel', 'lumio-job', 'lumio-platform'},
+    'lumio-hfsm': {'lumio-kernel'},
     'xtask': set(),
 }
 # Reviewed direct suppliers. Versions are exact; transitive graph is in Cargo.lock.
